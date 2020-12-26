@@ -19,9 +19,7 @@ class Activator {
 
     var typeMirror = reflectType(type);
     if (typeMirror is ClassMirror) {
-      return typeMirror
-          .newInstance(constructor, arguments, namedArguments)
-          .reflectee;
+      return typeMirror.newInstance(constructor, arguments).reflectee;
     } else {
       throw new ArgumentError(
           "Cannot create the instance of the type '$type'.");

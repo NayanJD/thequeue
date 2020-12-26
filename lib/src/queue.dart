@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:thequeue/src/activator.dart';
 import 'package:thequeue/thequeue.dart';
 import 'package:dartis/dartis.dart' as redis;
@@ -24,6 +26,10 @@ abstract class Queue<T extends JobModel> {
 
   final QueueOptions options;
 
+  redis.Client _client;
+
+  redis.Client _bclient;
+
   redis.Commands _commands;
 
   redis.Commands _blockingCommands;
@@ -34,9 +40,13 @@ abstract class Queue<T extends JobModel> {
 
   Future _initializing;
 
+  Future get doneInitializing => _initializing;
+
   String get _redisQueueName => ['thequeue', 'queue', _queueName].join(':');
 
   bool get isClosed => _isClosed;
+
+  final List<StreamSubscription<T>> _jobStreamSubscriptions = [];
 
   Future init(String connectionString) async {
     //conectionString should always be provided
@@ -45,12 +55,12 @@ abstract class Queue<T extends JobModel> {
           'connectionString should be provided if shouldApplyAuth is true for SimpleQueue');
     }
 
-    final client = await redis.Client.connect(connectionString);
-    final blockingClient = await redis.Client.connect(connectionString);
+    _client = await redis.Client.connect(connectionString);
+    _bclient = await redis.Client.connect(connectionString);
 
     //Set commands
-    _commands = client.asCommands<String, String>();
-    _blockingCommands = blockingClient.asCommands<String, String>();
+    _commands = _client.asCommands<String, String>();
+    _blockingCommands = _bclient.asCommands<String, String>();
 
     //Get username:password from redis://usernam:password@localhost:6379
     final uri = Uri.parse(connectionString);
@@ -69,39 +79,89 @@ abstract class Queue<T extends JobModel> {
     _isClosed = false;
   }
 
-  void start() async {
+  void start({int concurrency = 1}) async {
     await _initializing;
 
     if (_isClosed) {
       return;
     } else {
-      process();
+      final stream = jobStream().asBroadcastStream();
+
+      while (concurrency > 0) {
+        _jobStreamSubscriptions.add(stream.listen(process));
+        concurrency--;
+      }
     }
   }
 
-  void process() async {
-    if (_isClosed) {
-      return;
+  void close() async {
+    for (var subscription in _jobStreamSubscriptions) {
+      await subscription.cancel();
     }
 
-    final listPopResult = await _commands.blpop(key: _redisQueueName);
+    await _client.disconnect();
+    await _bclient.disconnect();
+  }
 
-    T jobModel = Activator.createInstance(T);
+  // void process() async {
+  //   if (_isClosed) {
+  //     return;
+  //   }
 
-    jobModel.serializeFromJsonString(listPopResult.value);
+  //   final listPopResult = await _commands.blpop(key: _redisQueueName);
 
+  //   T jobModel = Activator.createInstance(T);
+
+  //   jobModel.serializeFromJsonString(listPopResult.value);
+
+  //   try {
+  //     await execute(jobModel);
+  //   } catch (error, stacktrace) {
+  //     _logger.severe(error);
+  //     _logger.severe(stacktrace);
+  //   }
+
+  //   process();
+  // }
+
+  void process(T jobModel) async {
     try {
       await execute(jobModel);
     } catch (error, stacktrace) {
       _logger.severe(error);
       _logger.severe(stacktrace);
     }
-
-    process();
   }
 
-  void close() {
-    _isClosed = true;
+  Stream<T> jobStream() async* {
+    if (_isClosed) {
+      return;
+    }
+
+    while (true) {
+      final listPopResult = await _blockingCommands.blpop(key: _redisQueueName);
+
+      T jobModel = Activator.createInstance(T);
+
+      jobModel.serializeFromJsonString(listPopResult.value);
+
+      yield jobModel;
+    }
+  }
+
+  // void close() {
+  //   _isClosed = true;
+  // }
+
+  //This method would be called by api server to
+  //add job to queue
+  Future<void> addJob(T model) async {
+    //wait for initialization to finish
+    await _initializing;
+
+    //push job to redis list
+    await _commands.rpush(_redisQueueName,
+        value: model.serializeToJsonString());
   }
 
   Future<void> execute(T jobModel);
