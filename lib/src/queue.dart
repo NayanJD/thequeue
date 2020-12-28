@@ -42,7 +42,8 @@ abstract class Queue<T extends JobModel> {
 
   Future get doneInitializing => _initializing;
 
-  String get _redisQueueName => [options.keyPrefix, 'queue', _queueName].join(':');
+  String get _redisQueueName =>
+      [options.keyPrefix, 'queue', _queueName].join(':');
 
   bool get isClosed => _isClosed;
 
@@ -90,8 +91,7 @@ abstract class Queue<T extends JobModel> {
       while (concurrency > 0) {
         StreamSubscription<Job<T>> streamSubscription;
 
-        streamSubscription = stream.listen((Job<T> job) async  {
-
+        streamSubscription = stream.listen((Job<T> job) async {
           streamSubscription.pause();
 
           await process(job);
@@ -114,32 +114,10 @@ abstract class Queue<T extends JobModel> {
     await _bclient.disconnect();
   }
 
-  // void process() async {
-  //   if (_isClosed) {
-  //     return;
-  //   }
-
-  //   final listPopResult = await _commands.blpop(key: _redisQueueName);
-
-  //   T jobModel = Activator.createInstance(T);
-
-  //   jobModel.serializeFromJsonString(listPopResult.value);
-
-  //   try {
-  //     await execute(jobModel);
-  //   } catch (error, stacktrace) {
-  //     _logger.severe(error);
-  //     _logger.severe(stacktrace);
-  //   }
-
-  //   process();
-  // }
-
   void process(Job<T> job) async {
-
-    if(!job.isBeingProcessed){
+    if (!job.isBeingProcessed) {
       job.isBeingProcessed = true;
-    }else {
+    } else {
       return;
     }
 
@@ -157,23 +135,18 @@ abstract class Queue<T extends JobModel> {
     }
 
     while (true) {
-      final listPopResult = await _blockingCommands.blpop(key: _redisQueueName, timeout: 5);
+      final listPopResult =
+          await _blockingCommands.blpop(key: _redisQueueName, timeout: 5);
 
-      // print('broken from blpop');
+      if (listPopResult != null) {
+        T jobModel = Activator.createInstance(T);
 
-      if(listPopResult != null){
-      T jobModel = Activator.createInstance(T);
+        jobModel.serializeFromJsonString(listPopResult.value);
 
-      jobModel.serializeFromJsonString(listPopResult.value);
-
-      yield Job(jobModel);
+        yield Job(jobModel);
       }
     }
   }
-
-  // void close() {
-  //   _isClosed = true;
-  // }
 
   //This method would be called by api server to
   //add job to queue
