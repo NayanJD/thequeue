@@ -42,11 +42,11 @@ abstract class Queue<T extends JobModel> {
 
   Future get doneInitializing => _initializing;
 
-  String get _redisQueueName => ['thequeue', 'queue', _queueName].join(':');
+  String get _redisQueueName => [options.keyPrefix, 'queue', _queueName].join(':');
 
   bool get isClosed => _isClosed;
 
-  final List<StreamSubscription<T>> _jobStreamSubscriptions = [];
+  final List<StreamSubscription<Job<T>>> _jobStreamSubscriptions = [];
 
   Future init(String connectionString) async {
     //conectionString should always be provided
@@ -88,7 +88,18 @@ abstract class Queue<T extends JobModel> {
       final stream = jobStream().asBroadcastStream();
 
       while (concurrency > 0) {
-        _jobStreamSubscriptions.add(stream.listen(process));
+        StreamSubscription<Job<T>> streamSubscription;
+
+        streamSubscription = stream.listen((Job<T> job) async  {
+
+          streamSubscription.pause();
+
+          await process(job);
+
+          streamSubscription.resume();
+        });
+
+        _jobStreamSubscriptions.add(streamSubscription);
         concurrency--;
       }
     }
@@ -124,28 +135,39 @@ abstract class Queue<T extends JobModel> {
   //   process();
   // }
 
-  void process(T jobModel) async {
+  void process(Job<T> job) async {
+
+    if(!job.isBeingProcessed){
+      job.isBeingProcessed = true;
+    }else {
+      return;
+    }
+
     try {
-      await execute(jobModel);
+      await execute(job.jobModel);
     } catch (error, stacktrace) {
       _logger.severe(error);
       _logger.severe(stacktrace);
     }
   }
 
-  Stream<T> jobStream() async* {
+  Stream<Job<T>> jobStream() async* {
     if (_isClosed) {
       return;
     }
 
     while (true) {
-      final listPopResult = await _blockingCommands.blpop(key: _redisQueueName);
+      final listPopResult = await _blockingCommands.blpop(key: _redisQueueName, timeout: 5);
 
+      // print('broken from blpop');
+
+      if(listPopResult != null){
       T jobModel = Activator.createInstance(T);
 
       jobModel.serializeFromJsonString(listPopResult.value);
 
-      yield jobModel;
+      yield Job(jobModel);
+      }
     }
   }
 
