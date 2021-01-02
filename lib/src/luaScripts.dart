@@ -1,5 +1,6 @@
 import 'package:thequeue/src/commands/commands.dart';
 import 'package:dartis/dartis.dart' as redis;
+import './logger.dart';
 
 Future<T> runLuaScript<T>(String scriptName, redis.Commands commands,
     {List<String> keys, List<String> args}) async {
@@ -14,10 +15,10 @@ Future<T> runLuaScript<T>(String scriptName, redis.Commands commands,
   try {
     result = await commands.evalsha<T>(sha1Hash, keys: keys, args: args);
 
-    print('addJob script remembered.');
+    logger.finer('addJob script remembered.');
   } on redis.RedisException catch (error) {
     if (error.message.contains('NOSCRIPT')) {
-      print('addJob script not remembered');
+      logger.finer('addJob script not remembered');
       isScriptRememberedByRedis = false;
     } else {
       rethrow;
@@ -25,7 +26,7 @@ Future<T> runLuaScript<T>(String scriptName, redis.Commands commands,
   }
 
   if (!isScriptRememberedByRedis) {
-    print('addJob script running as eval');
+    logger.finer('addJob script running as eval');
     result = await commands.eval<T>(luaScript, keys: keys, args: args);
   }
 

@@ -1,4 +1,3 @@
-import 'package:thequeue/src/commands/commands.dart';
 import 'package:thequeue/thequeue.dart';
 import 'package:dartis/dartis.dart' as redis;
 import 'package:thequeue/src/luaScripts.dart';

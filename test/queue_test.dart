@@ -20,6 +20,13 @@ class TestQueue extends Queue<TestModel> {
 }
 
 void main() {
+  Logger.root.level = Level.ALL;
+  Logger.root.onRecord.listen((LogRecord record) {
+    if (record.loggerName == 'thequeue')
+      print(
+          '${record.time} ${record.level.name} ${record.loggerName} ${record.message}');
+  });
+
   redis.Client queueClient;
   redis.Client testClient;
   Queue<TestModel> queue;
