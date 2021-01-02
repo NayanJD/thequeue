@@ -17,6 +17,7 @@ local jobCounter = rcall("INCR", KEYS[1])
 jobId = jobCounter
 jobIdKey = ARGV[1] .. jobId
 
+rcall('LPUSH', KEYS[2], jobId)
 rcall("HMSET", jobIdKey, "data", ARGV[2],"createdAt", ARGV[3])
 
 return jobId

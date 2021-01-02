@@ -13,7 +13,7 @@ class TestQueue extends Queue<TestModel> {
 
   Completer completer;
   Future<void> execute(TestModel model) {
-    print('execute: ${model}');
+    print('execute: ${model.jobInt}');
 
     completer.complete();
   }

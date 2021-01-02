@@ -1,18 +1,22 @@
 import 'dart:async';
 
 import 'package:thequeue/src/activator.dart';
+import 'package:thequeue/src/luaScripts.dart';
 import 'package:thequeue/thequeue.dart';
 import 'package:dartis/dartis.dart' as redis;
+import 'package:uuid/uuid.dart';
 
 class QueueOptions {
   final String _keyPrefix;
+  final int _lockDuration;
 
   String get keyPrefix => _keyPrefix;
+  int get lockDuration => _lockDuration;
 
-  const QueueOptions(this._keyPrefix);
+  const QueueOptions(this._keyPrefix, this._lockDuration);
 
   Map<String, dynamic> toJson() {
-    return {'keyPrefix': _keyPrefix};
+    return {'keyPrefix': _keyPrefix, 'lockDuration': _lockDuration};
   }
 }
 
@@ -49,9 +53,11 @@ class QueueKeys {
 
 abstract class Queue<T extends JobModel> {
   Queue(this._queueName, String connectionString,
-      {this.options = const QueueOptions('thequeue')}) {
+      {this.options = const QueueOptions('thequeue', 30000)}) {
     _initializing = init(connectionString);
   }
+
+  final String _queueToken = Uuid().v4();
 
   final String _queueName;
 
@@ -63,7 +69,7 @@ abstract class Queue<T extends JobModel> {
 
   redis.Commands _commands;
 
-  redis.Commands _blockingCommands;
+  redis.Commands<String, String> _blockingCommands;
 
   Logger _logger;
 
@@ -170,15 +176,24 @@ abstract class Queue<T extends JobModel> {
     }
 
     while (true) {
-      final listPopResult = await _blockingCommands.blpop(
-          key: _queueKeys.activeQueue, timeout: 5);
+      final jobIdString = await _blockingCommands.brpoplpush(
+          _queueKeys.waitQueue, _queueKeys.activeQueue);
 
-      if (listPopResult != null) {
-        T jobModel = Activator.createInstance(T);
+      final jobId = int.tryParse(jobIdString);
 
-        jobModel.serializeFromJsonString(listPopResult.value);
+      if (jobId != null) {
+        final jobData =
+            await runLuaScript<Map<String, String>>('moveToActive', _commands,
+                args: [
+                  options.keyPrefix,
+                  jobId.toString(),
+                  _queueToken,
+                  options.lockDuration.toString(),
+                  DateTime.now().millisecondsSinceEpoch.toString()
+                ],
+                mapper: MoveToActiveScriptMapper());
 
-        yield Job(jobModel, _commands);
+        yield createJobFromJson<T>(jobData);
       }
     }
   }
@@ -189,13 +204,7 @@ abstract class Queue<T extends JobModel> {
     //wait for initialization to finish
     await _initializing;
 
-    //push job to redis list
-    // await _commands.rpush(_queueKeys.activeQueue,
-    //     value: model.serializeToJsonString());
-
-    final job = Job<T>(model, _commands);
-
-    await job.createJob(_queueKeys, options.keyPrefix);
+    await Job.createJob(_queueKeys, options.keyPrefix, _commands, model);
   }
 
   QueueKeys getQueueKeys() {
