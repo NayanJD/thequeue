@@ -1,10 +1,19 @@
 import 'dart:io' show Platform, Directory, File;
+import 'dart:convert';
 import 'package:path/path.dart'
     show dirname, basenameWithoutExtension, extension;
+import 'package:crypto/crypto.dart';
 
-Map<String, String> memoisedScriptMap = null;
+class LuaScript {
+  final String stringifiedScript;
+  final String sha1Hash;
 
-Future<Map<String, String>> readLua() async {
+  LuaScript(this.stringifiedScript, this.sha1Hash);
+}
+
+Map<String, LuaScript> memoisedScriptMap = null;
+
+Future<Map<String, LuaScript>> readLua() async {
   if (memoisedScriptMap != null) {
     return memoisedScriptMap;
   }
@@ -17,7 +26,7 @@ Future<Map<String, String>> readLua() async {
 
   final fileSystemEntities = directory.list();
 
-  final result = <String, String>{};
+  final result = <String, LuaScript>{};
 
   await for (var fileSystemEntity in fileSystemEntities) {
     if (fileSystemEntity is File) {
@@ -26,7 +35,13 @@ Future<Map<String, String>> readLua() async {
       final fileBasename = basenameWithoutExtension(filePath);
 
       if (fileExtension == '.lua') {
-        result[fileBasename] = await fileSystemEntity.readAsString();
+        // result[fileBasename] = await fileSystemEntity.readAsString();
+
+        final stringifiedScript = await fileSystemEntity.readAsString();
+        final sha1Hash = sha1.convert(utf8.encode(stringifiedScript));
+
+        result[fileBasename] =
+            LuaScript(stringifiedScript, sha1Hash.toString());
       }
     }
   }

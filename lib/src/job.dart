@@ -1,6 +1,7 @@
 import 'package:thequeue/src/commands/commands.dart';
 import 'package:thequeue/thequeue.dart';
 import 'package:dartis/dartis.dart' as redis;
+import 'package:thequeue/src/luaScripts.dart';
 
 class Job<T extends JobModel> {
   Job(this.jobModel, this._commands);
@@ -15,18 +16,18 @@ class Job<T extends JobModel> {
 
   set isBeingProcessed(value) => _isBeingProcessed = value;
 
-  Future<void> createJob(QueueKeys queueKeys) async {
-    final scriptMap = await readLua();
-
-    final jobId = await _commands.eval<int>(scriptMap['addJob'], keys: <String>[
+  Future<int> createJob(QueueKeys queueKeys, String queueKeyPrefix) async {
+    final jobId = await runLuaScript<int>('addJob', _commands, keys: <String>[
       queueKeys.jobId,
       queueKeys.waitQueue
     ], args: [
-      'prefix',
+      queueKeyPrefix,
       jobModel.serializeToJsonString(),
       DateTime.now().millisecondsSinceEpoch.toString()
     ]);
 
-    print(jobId);
+    // print(jobId);
+
+    return jobId;
   }
 }

@@ -20,6 +20,7 @@ class QueueKeys {
   static final String jobIdKey = 'jobId';
   static final String waitQueueKey = 'waitQueue';
   static final String activeQueueKey = 'activeQueue';
+
   static final List<String> queueKeys = [
     jobIdKey,
     waitQueueKey,
@@ -194,7 +195,7 @@ abstract class Queue<T extends JobModel> {
 
     final job = Job<T>(model, _commands);
 
-    await job.createJob(_queueKeys);
+    await job.createJob(_queueKeys, options.keyPrefix);
   }
 
   QueueKeys getQueueKeys() {

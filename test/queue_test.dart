@@ -47,6 +47,6 @@ void main() {
 
       return _completer.future;
       // expect(encodedString, allOf([isA<String>(), isNotEmpty]));
-    }, timeout: Timeout(Duration(seconds: 2)));
+    }, timeout: Timeout(Duration(seconds: 5)));
   });
 }
