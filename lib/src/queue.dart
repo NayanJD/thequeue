@@ -16,6 +16,36 @@ class QueueOptions {
   }
 }
 
+class QueueKeys {
+  static final String jobIdKey = 'jobId';
+  static final String waitQueueKey = 'waitQueue';
+  static final String activeQueueKey = 'activeQueue';
+  static final List<String> queueKeys = [
+    jobIdKey,
+    waitQueueKey,
+    activeQueueKey
+  ];
+
+  final String jobId;
+  final String waitQueue;
+  final String activeQueue;
+
+  QueueKeys._(this.jobId, this.waitQueue, this.activeQueue);
+
+  QueueKeys.fromJson(Map<String, String> json)
+      : jobId = json[jobIdKey],
+        waitQueue = json[waitQueueKey],
+        activeQueue = json[activeQueueKey];
+
+  Map<String, dynamic> toJson() {
+    return {
+      jobIdKey: jobId,
+      waitQueueKey: waitQueue,
+      activeQueueKey: activeQueue
+    };
+  }
+}
+
 abstract class Queue<T extends JobModel> {
   Queue(this._queueName, String connectionString,
       {this.options = const QueueOptions('thequeue')}) {
@@ -42,8 +72,10 @@ abstract class Queue<T extends JobModel> {
 
   Future get doneInitializing => _initializing;
 
-  String get _redisQueueName =>
-      [options.keyPrefix, 'queue', _queueName].join(':');
+  // String get _redisQueueName =>
+  //     [options.keyPrefix, 'queue', _queueName].join(':');
+
+  QueueKeys _queueKeys;
 
   bool get isClosed => _isClosed;
 
@@ -78,6 +110,8 @@ abstract class Queue<T extends JobModel> {
     }
 
     _isClosed = false;
+
+    _queueKeys = getQueueKeys();
   }
 
   void start({int concurrency = 1}) async {
@@ -135,15 +169,15 @@ abstract class Queue<T extends JobModel> {
     }
 
     while (true) {
-      final listPopResult =
-          await _blockingCommands.blpop(key: _redisQueueName, timeout: 5);
+      final listPopResult = await _blockingCommands.blpop(
+          key: _queueKeys.activeQueue, timeout: 5);
 
       if (listPopResult != null) {
         T jobModel = Activator.createInstance(T);
 
         jobModel.serializeFromJsonString(listPopResult.value);
 
-        yield Job(jobModel);
+        yield Job(jobModel, _commands);
       }
     }
   }
@@ -155,8 +189,19 @@ abstract class Queue<T extends JobModel> {
     await _initializing;
 
     //push job to redis list
-    await _commands.rpush(_redisQueueName,
-        value: model.serializeToJsonString());
+    // await _commands.rpush(_queueKeys.activeQueue,
+    //     value: model.serializeToJsonString());
+
+    final job = Job<T>(model, _commands);
+
+    await job.createJob(_queueKeys);
+  }
+
+  QueueKeys getQueueKeys() {
+    return QueueKeys.fromJson(QueueKeys.queueKeys.fold({}, (prev, key) {
+      prev[key] = [options.keyPrefix, _queueName, key].join(':');
+      return prev;
+    }));
   }
 
   Future<void> execute(T jobModel);
